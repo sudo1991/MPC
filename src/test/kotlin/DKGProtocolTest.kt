@@ -8,7 +8,7 @@ class DKGProtocolTest {
         val totalParticipants = 5
         val threshold = 3
         val sss = SharmirSecretSharing(totalShares = totalParticipants, threshold = threshold)
-        val dkg = DKGProtocol(totalParticipants = totalParticipants)
+        val dkg = PassiveSecurityDKGProtocol(totalParticipants = totalParticipants)
         // 난수 쉐어 생성 및 공유
         (1..totalParticipants)
             .map { dkg.generateRandomNumber(participantId = it) }

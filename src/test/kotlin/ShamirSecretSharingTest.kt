@@ -1,9 +1,7 @@
 import org.junit.jupiter.api.assertThrows
 import org.web3j.crypto.Keys
-import java.math.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 
 class ShamirSecretSharingTest {
     @Test

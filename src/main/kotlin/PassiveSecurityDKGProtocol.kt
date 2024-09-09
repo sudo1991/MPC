@@ -1,7 +1,7 @@
 import java.math.BigInteger
 import java.security.SecureRandom
 
-class DKGProtocol(val totalParticipants: Int) {
+class PassiveSecurityDKGProtocol(val totalParticipants: Int) {
     private val random = SecureRandom()
     private val allShares = Array(size = totalParticipants) { mutableListOf<Pair<Int, BigInteger>>() }
     private val finalShares by lazy {
