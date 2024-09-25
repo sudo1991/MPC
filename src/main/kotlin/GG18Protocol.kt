@@ -1,85 +1,110 @@
 import ECDSAValues.ecParams
 import ECDSAValues.prime
-import org.bouncycastle.asn1.ASN1EncodableVector
-import org.bouncycastle.asn1.ASN1Integer
-import org.bouncycastle.asn1.DERSequence
-import org.bouncycastle.jce.ECNamedCurveTable
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.bouncycastle.jce.spec.ECNamedCurveSpec
+import org.bouncycastle.crypto.params.ECDomainParameters
+import org.bouncycastle.crypto.params.ECPublicKeyParameters
+import org.bouncycastle.crypto.signers.ECDSASigner
+import org.web3j.crypto.Sign
+import org.web3j.utils.Numeric
 import java.math.BigInteger
-import java.security.*
-import java.security.spec.ECPoint
-import java.security.spec.ECPublicKeySpec
+import java.security.SecureRandom
 
 class GG18Protocol(private val numberOfParticipants: Int) {
     fun signWithLagrange(
         shares: List<Share>,
         message: ByteArray
-    ): Pair<BigInteger, BigInteger> {
+    ): Sign.SignatureData { // Triple을 사용하여 r, s, v를 반환
         require(value = shares.size >= numberOfParticipants)
 
         val k = generateDistributedNonce()
-        val r = ecParams.g.multiply(k).normalize().affineXCoord.toBigInteger()
-            .mod(prime) // r = (k * G).x mod n
+        // r = (k * G).x mod n
+        val pointR = ecParams.g.multiply(k).normalize() // 점 R을 얻음
+        val r = pointR.affineXCoord.toBigInteger().mod(prime)
             .takeUnless { it == BigInteger.ZERO }
             ?: throw IllegalStateException("r is zero, choose different k")
-
+        // s = k^−1⋅(m + xr) mod q
         val s = combineShares(
-            // s = k^−1⋅(m + xr) mod q
-            partialS = shares.map {
-                k.modInverse(prime).multiply(
-                    BigInteger(
-                        1,
-                        getMessageHash(message = message)
-                    ).add(r.multiply(it.y))
-                ).mod(prime)
-            },
+            partialS = shares
+                .map {
+                    k
+                        .modInverse(prime)
+                        .multiply(BigInteger(1, message).add(r.multiply(it.y)))
+                        .mod(prime)
+                },
             xValues = shares.map { it.x }
         )
+            .let {
+                if (it > prime.shiftRight(1)) {  // n/2 보다 크면 절반으로 나눔
+                    prime.subtract(it) // s 값을 더 작은 값으로 변환
+                } else {
+                    it
+                }
+            }
 
-        return Pair(r, s)
+        // r, s 값의 범위 확인
+        require(r.signum() > 0 && r < prime) { "Invalid r value" }
+        require(s.signum() > 0 && s < prime) { "Invalid s value" }
+
+        // r, s 값을 32바이트로 패딩 (필요할 경우)
+        val rPadded = Numeric.toBytesPadded(r, 32)
+        val sPadded = Numeric.toBytesPadded(s, 32)
+
+        // 패딩 확인
+        require(rPadded.size == 32) { "r value is not correctly padded" }
+        require(sPadded.size == 32) { "s value is not correctly padded" }
+
+        return Sign.SignatureData(
+            (if (pointR.affineYCoord.toBigInteger().testBit(0)) {
+                28.toBigInteger()
+            } else {
+                27.toBigInteger()
+            }).toByteArray(),                // v
+            rPadded, // r (32바이트 패딩된 값)
+            sPadded  // s (32바이트 패딩된 값)
+        )
     }
 
-    // Verify combined signature function
     fun verifyCombinedSignature(
         publicKey: BigInteger,
         message: ByteArray,
-        signature: Pair<BigInteger, BigInteger>
+        combinedSignatureData: Sign.SignatureData
     ): Boolean {
-        // r과 s를 DER 형식으로 인코딩
-        return Signature.getInstance("SHA256withECDSA", "BC")
-            .apply {
-                initVerify(convertPublicKey(publicKeyInt = publicKey))
-                update(message)
-            }.verify(
-                DERSequence(
-                    ASN1EncodableVector()
-                        .apply {
-                            add(ASN1Integer(signature.first))
-                            add(ASN1Integer(signature.second))
-                        }
-                ).encoded
-            )
+        // BouncyCastle ECDSA 서명 검증
+        val signer = ECDSASigner()
+
+        // publicKey를 BouncyCastle의 ECPublicKeyParameters로 변환
+        val ecPublicKeyParameters = convertPublicKey(publicKey)
+
+        // 서명 검증을 위해 검증자 초기화
+        signer.init(false, ecPublicKeyParameters)
+
+        // r과 s 값
+        val r = BigInteger(1, combinedSignatureData.r)
+        val s = BigInteger(1, combinedSignatureData.s)
+
+        // 서명 검증
+        return signer.verifySignature(message, r, s)
     }
 
-    // BigInteger 형태의 Public key를 java.security.PublicKey 객체로 변환
-    private fun convertPublicKey(publicKeyInt: BigInteger): PublicKey {
-        // Get elliptic curve parameters for secp256k1
-        val ecParams = ECNamedCurveTable.getParameterSpec("secp256k1")
+    // BigInteger 형태의 Public key를 ECPublicKeyParameters로 변환
+    private fun convertPublicKey(publicKeyInt: BigInteger): ECPublicKeyParameters {
+        // Public key에서 X와 Y 좌표 추출
+        val xCoord = publicKeyInt.shiftRight(256) // 상위 256비트는 X 좌표
+        val yCoord = publicKeyInt.and(BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)) // 하위 256비트는 Y 좌표
 
-        // Use KeyFactory to generate the PublicKey
-        return KeyFactory.getInstance("ECDSA", BouncyCastleProvider.PROVIDER_NAME).generatePublic(
-            // Create ECPublicKeySpec with the Java ECPoint and curve spec
-            ECPublicKeySpec(
-                // Manually extract X and Y coordinates from the public key
-                // Convert Web3j public key (raw BigInteger) into ECPoint with X and Y
-                ECPoint(
-                    publicKeyInt.shiftRight(256), // Get the upper 256 bits (X coordinate), Public key size in bits (512 bits = 256 bits for X and 256 bits for Y)
-                    publicKeyInt.and(BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)) // Get the lower 256 bits (Y coordinate)
-                ),
-                ECNamedCurveSpec(ecParams.name, ecParams.curve, ecParams.g, ecParams.n, ecParams.h)
-            )
+        // ECPoint 생성
+        val curve = ecParams.curve
+        val ecPoint = curve.createPoint(xCoord, yCoord)
+
+        // ECDomainParameters 생성
+        val domainParameters = ECDomainParameters(
+            curve,
+            ecParams.g,
+            ecParams.n,
+            ecParams.h
         )
+
+        // ECPublicKeyParameters 생성
+        return ECPublicKeyParameters(ecPoint, domainParameters)
     }
 
     // 라그랑주 보간법 = 주어진 n개의 점을 지나는 다항식을 구하는 방법
@@ -105,10 +130,5 @@ class GG18Protocol(private val numberOfParticipants: Int) {
             .fold(BigInteger.ZERO) { acc, (partial, coeff) ->
                 acc.add(partial.multiply(coeff)).mod(prime)
             } // (acc += 서명 값 x 라그랑주 계수) mod prime
-    }
-
-    // Hash the message using SHA-256 and return the byte array
-    private fun getMessageHash(message: ByteArray): ByteArray {
-        return MessageDigest.getInstance("SHA-256").digest(message)
     }
 }
