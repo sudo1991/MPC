@@ -5,17 +5,14 @@ import abc.ethereum.contract.invocation.AbiBaseTransactionInvocationChain
 import abc.ethereum.contract.invocation.EthereumInvocationContext
 import abc.ethereum.contract.invocation.EthereumInvocationRequest
 import abc.ethereum.contract.invocation.InvocationTarget
-import abc.util.orNull
 import com.esaulpaugh.headlong.abi.Tuple
 import org.web3j.crypto.Hash
 import org.web3j.crypto.Keys
 import org.web3j.crypto.RawTransaction
 import org.web3j.crypto.Sign
-import org.web3j.crypto.TransactionEncoder.createEip155SignatureData
 import org.web3j.crypto.TransactionEncoder.encode
 import org.web3j.protocol.core.DefaultBlockParameterName
 import org.web3j.tx.gas.StaticGasProvider
-import org.web3j.utils.Numeric.toHexString
 import java.lang.Thread.sleep
 import java.math.BigInteger
 import java.util.*
@@ -28,11 +25,21 @@ import kotlin.test.assertTrue
 class GG18ProtocolTest {
     private val itemStoreAbi = javaClass.getResourceAsStream("/ethereum/contracts/ItemStore.json")!!
         .use { input -> EthereumAbi(inputStream = input) }
+    private val threshold = 3
+    private val endpoint = "https://quorum.ledgermaster.kr/"
+    private val gg18 = GG18Protocol(endpoint = endpoint)
+    private val keyPair = Keys.createEcKeyPair() // Web3j's EC key pair generation
+    private val secret = keyPair.privateKey
+    private val publicKey = keyPair.publicKey
+    private val walletAddress = "0x${Keys.getAddress(publicKey)}"
+    private val chainId = 1337L
+    private val shares =
+        SharmirSecretSharing(totalShares = 5, threshold = threshold).splitKey(secret = secret)
 
     private val wallet by lazy {
         EthereumWallet(
-            endpoint = "https://quorum.ledgermaster.kr/",
-            privateKey = EthereumPrivateKey(keyPair)
+            endpoint = endpoint,
+            privateKey = EthereumPrivateKey(keyPair = keyPair)
         )
             .apply { gasProvider = StaticGasProvider(BigInteger.ZERO, 100_000.toBigInteger()) }
     }
@@ -40,34 +47,25 @@ class GG18ProtocolTest {
         wallet.deploy(bytecode = itemStoreAbi.getBytecode(), chainId = chainId)
             .also { println(message = "Contract deployed: $it") }
     }
-
-    private val threshold = 3
-    private val gg18 = GG18Protocol(numberOfParticipants = threshold)
-    private val keyPair = Keys.createEcKeyPair() // Web3j's EC key pair generation
-    private val secret = keyPair.privateKey
-    private val walletAddress = "0x${Keys.getAddress(keyPair.publicKey)}"
-    private val chainId = 1337L
-    private val shares =
-        SharmirSecretSharing(totalShares = 5, threshold = threshold).splitKey(secret = secret)
     private val fee = wallet.getFee(address = storeAddress)
 
     @BeforeTest
     fun beforeTest() {
-        println(message = "Wallet address: $walletAddress, 비밀 키: $secret")
-        print(message = "비밀 조각:")
+        println(message = "Wallet address: $walletAddress, Private key: $secret, Public key: $publicKey")
         shares.forEachIndexed { index, (x, y) -> println(message = "사용자 ${index + 1} = x: $x, y: $y") }
+        shares.shuffled().take(n = threshold)
+            .forEach { gg18.addShare(share = it) } // 각 참가자가 자신의 조각 키를 제출
     }
 
     @Test
     fun `공동서명 생성 및 검증`() {
         // given
-        val message = Hash.sha3(encode(getRawTransaction(), chainId))
-        val combinedSignatureData = getCombinedSignatureData(message = message)
+        gg18.setMessage(message = Hash.sha3(encode(getRawTransaction(), chainId)))
+        val combinedSignatureData = getCombinedSignatureData()
 
         // when
         val isSignatureValid = gg18.verifyCombinedSignature(
-            publicKey = keyPair.publicKey,
-            message = message,
+            publicKey = publicKey,
             combinedSignatureData = combinedSignatureData
         ) // 공통 공개키를 통한 서명 값 검증
 
@@ -79,39 +77,20 @@ class GG18ProtocolTest {
     fun `트랜잭션 전송 및 receipt 조회`() {
         // given
         val rawTransaction = getRawTransaction()
-        val encodedTransaction = encode(rawTransaction, chainId)
-        val combinedSignatureData =
-            getCombinedSignatureData(message = Hash.sha3(encodedTransaction))
-        val recoveredWalletAddress = "0x${
-            Keys.getAddress(
-                Sign.signedMessageToKey(
-                    encodedTransaction,
-                    combinedSignatureData
-                )
-            )
-        }"
-            .also { println("Recovered wallet address: $it") }
-        val txHash = wallet.web3j.ethSendRawTransaction(
-            toHexString(
-                encode(
-                    rawTransaction,
-                    createEip155SignatureData(combinedSignatureData, chainId)
-                )
-            )
-        ).send().transactionHash
+        gg18.setMessage(message = Hash.sha3(encode(rawTransaction, chainId)))
+        val txHash = gg18.sendTransaction(
+            rawTransaction = rawTransaction,
+            combinedSignatureData = getCombinedSignatureData(),
+            chainId = chainId
+        )
         sleep(3000L)
 
         // when
-        val receipt =
-            wallet.web3j.ethGetTransactionReceipt(txHash).send().transactionReceipt.orNull()
-                .also { println(message = "Receipt = $it") }
+        val receipt = gg18.getReceipt(txHash = txHash)
 
         // then
         assertNotNull(actual = receipt, message = "Receipt is null")
-        assertTrue(
-            actual = walletAddress == receipt.from && walletAddress == recoveredWalletAddress,
-            message = "Transaction 검증 실패"
-        )
+        assertTrue(actual = walletAddress == receipt.from, message = "Transaction 검증 실패")
     }
 
     private fun getRawTransaction(): RawTransaction {
@@ -143,11 +122,7 @@ class GG18ProtocolTest {
         )
     }
 
-    private fun getCombinedSignatureData(message: ByteArray): Sign.SignatureData {
-        return gg18.signWithLagrange(
-            shares = shares.shuffled().take(n = threshold), // 임계 값 만큼의 share를 랜덤하게 가져 옴
-            message = message
-        ) // 공동 서명을 통해 서명 생성
-            .also { println("r = ${BigInteger(it.r)}, s = ${BigInteger(it.s)}, v = ${BigInteger(it.v)}") }
+    private fun getCombinedSignatureData(): Sign.SignatureData {
+        return gg18.signWithLagrange(publicKey = publicKey) // 공동 서명을 통해 서명 생성
     }
 }
