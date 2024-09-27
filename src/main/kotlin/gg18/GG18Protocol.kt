@@ -1,3 +1,5 @@
+package gg18
+
 import ECDSAValues.ecParams
 import ECDSAValues.prime
 import Web3jUtils.toWeb3j
@@ -14,41 +16,48 @@ import org.web3j.utils.Numeric
 import org.web3j.utils.Numeric.toHexString
 import java.math.BigInteger
 
-class GG18Protocol(endpoint: String) {
-    private val web3j = endpoint.toWeb3j()
+class GG18Protocol(val message: ByteArray, val numberOfParticipants: Int) {
+    private val web3j = "https://quorum.ledgermaster.kr/".toWeb3j()
 
-    private lateinit var message: ByteArray
+    private val signatureFragments = mutableListOf<SignatureFragment>()
 
-    fun setMessage(message: ByteArray) {
-        this.message = message
+    fun addSignatureFragment(signatureFragment: SignatureFragment) {
+        signatureFragments.add(element = signatureFragment)
     }
 
-    private val shares = mutableListOf<Share>()
+    private val temporaryKeys = mutableListOf<BigInteger>()
 
-    fun addShare(share: Share) {
-        shares.add(element = share)
+    fun addTemporaryKey(key: BigInteger) {
+        // TODO("임시 키 검증 로직")
+        temporaryKeys.add(key)
     }
 
     private val k by lazy {
-        shares.map { it.nonce }.reduce { acc, share ->
+        check(temporaryKeys.size == numberOfParticipants) { "Number of temporary keys submitted is different than number of participants." }
+
+        temporaryKeys.reduce { acc, share ->
             acc.add(share).mod(prime)
         } // 임시 키(또는 nonce)를 각 참가자의 값들의 합으로 계산
     }
-    private val r by lazy {
+    val r by lazy {
         // r = (G * k).x mod n
         ecParams.g.multiply(k).normalize().affineXCoord.toBigInteger().mod(prime)
             .takeIf { it.signum() > 0 && it < prime }
             ?: throw IllegalStateException("Invalid r value")
     }
 
+    fun calculateS(s: BigInteger): BigInteger {
+        return k.modInverse(prime).multiply(BigInteger(1, message).add(s))
+            .mod(prime) // s = r.multiply(share.y)
+    }
+
     fun signWithLagrange(publicKey: BigInteger): Sign.SignatureData { // Triple을 사용하여 r, s, v를 반환
-        val kInverse = k.modInverse(prime)
+        check(signatureFragments.size == numberOfParticipants) { "Number of signature fragments submitted is different than number of participants." }
+
         // s = k^−1⋅(m + xr) mod q
         val s = combineShares(
-            partialS = shares.map {
-                kInverse.multiply(BigInteger(1, message).add(r.multiply(it.y))).mod(prime)
-            },
-            xValues = shares.map { it.x }
+            partialS = signatureFragments.map { it.s },
+            xValues = signatureFragments.map { it.x }
         )
             .let { if (it > prime.shiftRight(1)) prime.subtract(it) else it } // n/2 보다 크면 절반으로 나눔
             .takeIf { it.signum() > 0 && it < prime }

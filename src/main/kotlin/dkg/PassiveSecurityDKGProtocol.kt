@@ -1,9 +1,10 @@
+package dkg
+
+import shamir.Share
 import java.math.BigInteger
 import java.security.SecureRandom
 
 class PassiveSecurityDKGProtocol(val totalParticipants: Int) {
-    data class Participant(val id: Int, val randomNumber: BigInteger)
-
     private val random = SecureRandom()
     private val allShares = Array(size = totalParticipants) { mutableListOf<Pair<Int, BigInteger>>() }
     private val finalShares by lazy {

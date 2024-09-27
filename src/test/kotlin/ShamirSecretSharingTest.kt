@@ -1,5 +1,6 @@
 import org.junit.jupiter.api.assertThrows
 import org.web3j.crypto.Keys
+import shamir.ShamirSecretSharing
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -10,7 +11,10 @@ class ShamirSecretSharingTest {
         val masterPrivateKey = Keys.createEcKeyPair().privateKey
         val totalShares = 5
 
-        val sss = SharmirSecretSharing(totalShares = totalShares, threshold = 3) // totalShares = 생성할 총 조각 수, threshold = 키를 재구성하는데 필요한 최소한의 조각 수
+        val sss = ShamirSecretSharing(
+            totalShares = totalShares,
+            threshold = 3
+        ) // totalShares = 생성할 총 조각 수, threshold = 키를 재구성하는데 필요한 최소한의 조각 수
         // when
         val shares = sss.splitKey(secret = masterPrivateKey)
 
@@ -27,7 +31,10 @@ class ShamirSecretSharingTest {
         // given
         val masterPrivateKey = Keys.createEcKeyPair().privateKey
         val threshold = 3
-        val sss = SharmirSecretSharing(totalShares = 5, threshold = 3) // totalShares = 생성할 총 조각 수, threshold = 키를 재구성하는데 필요한 최소한의 조각 수
+        val sss = ShamirSecretSharing(
+            totalShares = 5,
+            threshold = 3
+        ) // totalShares = 생성할 총 조각 수, threshold = 키를 재구성하는데 필요한 최소한의 조각 수
         val shares = sss.splitKey(secret = masterPrivateKey)
 
         // when
@@ -40,7 +47,10 @@ class ShamirSecretSharingTest {
         // given
         val masterPrivateKey = Keys.createEcKeyPair().privateKey
         val threshold = 3
-        val sss = SharmirSecretSharing(totalShares = 5, threshold = threshold) // totalShares = 생성할 총 조각 수, threshold = 키를 재구성하는데 필요한 최소한의 조각 수
+        val sss = ShamirSecretSharing(
+            totalShares = 5,
+            threshold = threshold
+        ) // totalShares = 생성할 총 조각 수, threshold = 키를 재구성하는데 필요한 최소한의 조각 수
 
         val shares = sss.splitKey(secret = masterPrivateKey)
 

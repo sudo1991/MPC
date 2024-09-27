@@ -1,3 +1,5 @@
+import dkg.PassiveSecurityDKGProtocol
+import shamir.ShamirSecretSharing
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -7,7 +9,7 @@ class DKGProtocolTest {
         // given
         val totalParticipants = 5
         val threshold = 3
-        val sss = SharmirSecretSharing(totalShares = totalParticipants, threshold = threshold)
+        val sss = ShamirSecretSharing(totalShares = totalParticipants, threshold = threshold)
         val dkg = PassiveSecurityDKGProtocol(totalParticipants = totalParticipants)
         // 난수 쉐어 생성 및 공유
         (1..totalParticipants)

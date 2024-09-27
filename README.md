@@ -1,0 +1,3 @@
+- Passive security version of [Distributed Key Generation(DKG)](https://en.wikipedia.org/wiki/Distributed_key_generation)
+- GG18: ECDSA Threshold Signature Scheme [[Gennaro, R., Goldfeder, S.: Fast multiparty threshold ecdsa with fast trustless setup. In: Proceedings of the 2018 ACM SIGSAC Conference on Computer and Communications Security. pp. 1179–1194. ACM (2018)](https://eprint.iacr.org/2019/114.pdf)]
+- Shamir's secret sharing [[Shamir, Adi (1979), “How to share a secret”](http://web.mit.edu/6.857/OldStuff/Fall03/ref/Shamir-HowToShareASecret.pdf)]
