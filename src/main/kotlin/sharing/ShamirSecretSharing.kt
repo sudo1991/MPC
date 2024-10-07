@@ -1,4 +1,4 @@
-package shamir
+package sharing
 
 import ECDSAValues.prime
 import java.math.BigInteger

@@ -1,6 +1,6 @@
 package dkg
 
-import shamir.Share
+import sharing.Share
 import java.math.BigInteger
 import java.security.SecureRandom
 

@@ -1,6 +1,6 @@
 import org.junit.jupiter.api.assertThrows
 import org.web3j.crypto.Keys
-import shamir.ShamirSecretSharing
+import sharing.ShamirSecretSharing
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

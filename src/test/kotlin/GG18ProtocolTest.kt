@@ -15,7 +15,7 @@ import org.web3j.crypto.RawTransaction
 import org.web3j.crypto.TransactionEncoder.encode
 import org.web3j.protocol.core.DefaultBlockParameterName
 import org.web3j.tx.gas.StaticGasProvider
-import shamir.ShamirSecretSharing
+import sharing.ShamirSecretSharing
 import java.lang.Thread.sleep
 import java.math.BigInteger
 import java.security.SecureRandom

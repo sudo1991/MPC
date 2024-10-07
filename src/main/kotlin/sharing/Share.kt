@@ -1,4 +1,4 @@
-package shamir
+package sharing
 
 import java.math.BigInteger
 
