@@ -33,6 +33,8 @@ class ShamirSecretSharing(val totalShares: Int, val threshold: Int) {
             }
             acc + y_i * li % prime
         }
-        return secret.mod(prime) // 비밀을 prime으로 모듈 연산하여 반환
+        val positiveSecret = secret.mod(prime)
+
+        return if (positiveSecret < BigInteger.ZERO) positiveSecret.add(prime) else positiveSecret
     }
 }
